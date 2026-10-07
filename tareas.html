@@ -71,6 +71,23 @@
 
   .empty-msg { color: var(--muted); text-align: center; padding: 40px 20px; }
   .status { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 8px; }
+
+  .modal-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; max-width: 340px; width: 100%;
+  }
+  .modal-box p { margin: 0 0 6px; font-size: 1rem; }
+  .modal-box .modal-item { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; word-break: break-word; }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; font-size: 0.95rem; border: 1px solid var(--border); }
+  .modal-actions .confirm { background: var(--accent); color: #fff; border: none; }
+  .modal-actions .cancel { background: none; color: var(--text); }
 </style>
 </head>
 <body>
@@ -92,6 +109,17 @@
 
 <div id="list"></div>
 <div class="status" id="status"></div>
+
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-box">
+    <p id="confirm-title">¿Marcar como hecha?</p>
+    <div class="modal-item" id="confirm-item"></div>
+    <div class="modal-actions">
+      <button class="cancel" onclick="cancelComplete()">Cancelar</button>
+      <button class="confirm" onclick="confirmComplete()">Sí</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbxXkAzm09Bnq7k_p7b38ygYjdeqTfPAqX6cbz8SSGEcmsjnMaoZ91H8Qfv2wgPpIswTsw/exec";
@@ -140,7 +168,7 @@ function render() {
     btn.id = "item-" + it.id;
     btn.innerHTML = '<span class="box"></span><span class="txt"></span>';
     btn.querySelector('.txt').textContent = it.texto;
-    btn.onclick = function() { completeItem(it.id); };
+    btn.onclick = function() { askComplete(it.id, it.texto); };
     list.appendChild(btn);
   });
 }
@@ -170,6 +198,28 @@ function addItem() {
     console.error("Error al añadir:", err);
     setStatus("No se pudo guardar en Google Sheets");
   });
+}
+
+let pendingId = null;
+
+function askComplete(id, texto) {
+  pendingId = id;
+  document.getElementById('confirm-title').textContent =
+    tab === 'tareas' ? "¿Marcar como hecha?" : "¿Quitar de la compra?";
+  document.getElementById('confirm-item').textContent = texto;
+  document.getElementById('confirm-modal').classList.add('active');
+}
+
+function cancelComplete() {
+  pendingId = null;
+  document.getElementById('confirm-modal').classList.remove('active');
+}
+
+function confirmComplete() {
+  const id = pendingId;
+  document.getElementById('confirm-modal').classList.remove('active');
+  pendingId = null;
+  if (id) completeItem(id);
 }
 
 function completeItem(id) {
