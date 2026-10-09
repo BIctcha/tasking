@@ -84,10 +84,16 @@
   }
   .modal-box p { margin: 0 0 6px; font-size: 1rem; }
   .modal-box .modal-item { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; word-break: break-word; }
+  .modal-input {
+    width: 100%; padding: 12px; font-size: 1rem; margin-bottom: 20px;
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--text);
+  }
   .modal-actions { display: flex; gap: 10px; }
   .modal-actions button { flex: 1; padding: 12px; border-radius: 10px; font-size: 0.95rem; border: 1px solid var(--border); }
   .modal-actions .confirm { background: var(--accent); color: #fff; border: none; }
   .modal-actions .cancel { background: none; color: var(--text); }
+  .modal-actions .edit { background: var(--accent-dim); color: var(--accent); border: none; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -114,9 +120,15 @@
   <div class="modal-box">
     <p id="confirm-title">¿Marcar como hecha?</p>
     <div class="modal-item" id="confirm-item"></div>
-    <div class="modal-actions">
+    <input type="text" id="edit-input" class="modal-input" style="display:none" autocomplete="off">
+    <div class="modal-actions" id="actions-main">
       <button class="cancel" onclick="cancelComplete()">Cancelar</button>
+      <button class="edit" onclick="startEdit()">Editar</button>
       <button class="confirm" onclick="confirmComplete()">Sí</button>
+    </div>
+    <div class="modal-actions" id="actions-edit" style="display:none">
+      <button class="cancel" onclick="cancelComplete()">Cancelar</button>
+      <button class="confirm" onclick="saveEdit()">Guardar</button>
     </div>
   </div>
 </div>
@@ -166,7 +178,7 @@ function render() {
     const btn = document.createElement('button');
     btn.className = "item";
     btn.id = "item-" + it.id;
-    btn.innerHTML = '<span class="box"></span><span class="txt"></span>';
+    btn.innerHTML = '<span class="txt"></span>';
     btn.querySelector('.txt').textContent = it.texto;
     btn.onclick = function() { askComplete(it.id, it.texto); };
     list.appendChild(btn);
@@ -202,12 +214,52 @@ function addItem() {
 
 let pendingId = null;
 
+let pendingTexto = "";
+
 function askComplete(id, texto) {
   pendingId = id;
+  pendingTexto = texto;
   document.getElementById('confirm-title').textContent =
     tab === 'tareas' ? "¿Marcar como hecha?" : "¿Quitar de la compra?";
   document.getElementById('confirm-item').textContent = texto;
+  document.getElementById('confirm-item').style.display = 'block';
+  document.getElementById('edit-input').style.display = 'none';
+  document.getElementById('actions-main').style.display = 'flex';
+  document.getElementById('actions-edit').style.display = 'none';
   document.getElementById('confirm-modal').classList.add('active');
+}
+
+function startEdit() {
+  document.getElementById('confirm-title').textContent = "Editar";
+  document.getElementById('confirm-item').style.display = 'none';
+  const input = document.getElementById('edit-input');
+  input.value = pendingTexto;
+  input.style.display = 'block';
+  document.getElementById('actions-main').style.display = 'none';
+  document.getElementById('actions-edit').style.display = 'flex';
+  input.focus();
+}
+
+function saveEdit() {
+  const nuevo = document.getElementById('edit-input').value.trim();
+  const oldId = pendingId;
+  const hoja = tab;
+  if (!nuevo || nuevo === pendingTexto || !oldId) { cancelComplete(); return; }
+
+  const newId = "i" + Date.now();
+  const idx = data[hoja].findIndex(function(x) { return x.id === oldId; });
+  if (idx === -1) { cancelComplete(); return; }
+  data[hoja][idx] = { id: newId, texto: nuevo };
+  saveCache();
+  render();
+  cancelComplete();
+
+  post({ accion: "delete", hoja: hoja, id: oldId })
+    .then(function() { return post({ accion: "add", hoja: hoja, id: newId, texto: nuevo }); })
+    .catch(function(err) {
+      console.error("Error al editar:", err);
+      setStatus("No se pudo editar en Google Sheets");
+    });
 }
 
 function cancelComplete() {
@@ -224,10 +276,7 @@ function confirmComplete() {
 
 function completeItem(id) {
   const el = document.getElementById("item-" + id);
-  if (el) {
-    el.classList.add('done');
-    el.querySelector('.box').textContent = "✓";
-  }
+  if (el) el.classList.add('done');
   const hoja = tab;
 
   setTimeout(function() {
