@@ -16,6 +16,7 @@
     --accent: #7B5BF2;
     --accent-dim: #E8E2FC;
     --good: #22a06b;
+    --bad: #e05a4f;
     --border: #dfe3ee;
   }
   * { box-sizing: border-box; }
@@ -34,7 +35,7 @@
 
   .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
   .tab {
-    flex: 1; padding: 12px; border-radius: 12px;
+    flex: 1; padding: 12px 4px; border-radius: 12px;
     border: 1px solid var(--border); background: var(--card);
     color: var(--muted); font-size: 1rem; font-weight: 600;
   }
@@ -59,15 +60,33 @@
     box-shadow: 0 2px 10px rgba(9, 24, 77, 0.05);
     transition: opacity 0.3s, transform 0.3s;
   }
-  .item .box {
-    width: 24px; height: 24px; border-radius: 8px;
-    border: 2px solid var(--border); flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.9rem; color: #fff;
-  }
   .item.done { opacity: 0; transform: translateX(40px); }
-  .item.done .box { background: var(--good); border-color: var(--good); }
   .item.done .txt { text-decoration: line-through; color: var(--muted); }
+  .item .txt { flex: 1; }
+  .item .meta { color: var(--muted); font-size: 0.85rem; }
+  .item .check { color: var(--good); font-size: 1.3rem; }
+  .item.casa-done { border-color: var(--good); background: rgba(34, 160, 107, 0.08); }
+
+  .section-title {
+    font-size: 0.8rem; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em; margin: 18px 2px 8px;
+  }
+  .section-title:first-child { margin-top: 4px; }
+  .section-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+
+  .week-row {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+    box-shadow: 0 2px 10px rgba(9, 24, 77, 0.05);
+  }
+  .week-label { font-weight: 600; margin-bottom: 4px; }
+  .week-days { color: var(--muted); font-size: 0.85rem; margin-bottom: 6px; }
+  .chip {
+    display: inline-block; padding: 4px 10px; border-radius: 8px;
+    font-size: 0.78rem; margin: 3px 4px 0 0;
+    background: rgba(224, 90, 79, 0.12); color: var(--bad);
+  }
+  .chip.done { background: rgba(34, 160, 107, 0.15); color: var(--good); font-weight: 600; }
 
   .empty-msg { color: var(--muted); text-align: center; padding: 40px 20px; }
   .status { color: var(--muted); font-size: 0.8rem; text-align: center; margin-top: 8px; }
@@ -106,9 +125,10 @@
 <div class="tabs">
   <button class="tab active" id="tab-tareas" onclick="setTab('tareas')">Tareas</button>
   <button class="tab" id="tab-compra" onclick="setTab('compra')">Compra</button>
+  <button class="tab" id="tab-casa" onclick="setTab('casa')">Casa</button>
 </div>
 
-<div class="add-row">
+<div class="add-row" id="add-row">
   <input type="text" id="new-input" placeholder="Nueva tarea" autocomplete="off">
   <button onclick="addItem()">+</button>
 </div>
@@ -123,7 +143,7 @@
     <input type="text" id="edit-input" class="modal-input" style="display:none" autocomplete="off">
     <div class="modal-actions" id="actions-main">
       <button class="cancel" onclick="cancelComplete()">Cancelar</button>
-      <button class="edit" onclick="startEdit()">Editar</button>
+      <button class="edit" id="btn-edit" onclick="startEdit()">Editar</button>
       <button class="confirm" onclick="confirmComplete()">Sí</button>
     </div>
     <div class="modal-actions" id="actions-edit" style="display:none">
@@ -137,14 +157,29 @@
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbxXkAzm09Bnq7k_p7b38ygYjdeqTfPAqX6cbz8SSGEcmsjnMaoZ91H8Qfv2wgPpIswTsw/exec";
 const CACHE_KEY = "listas_cache";
 
+// Tareas fijas de Casa. Para añadir más, solo añade una línea aquí.
+const CASA_TASKS = [
+  "Limpiar baños",
+  "Limpiar polvo",
+  "Limpiar cocina",
+  "Fregar",
+  "Barrer/Aspiradora",
+  "Limpiar"
+];
+
 let tab = "tareas";
 let data = loadCache();
 
 function loadCache() {
+  let d = { tareas: [], compra: [], casa: [] };
   try {
     const raw = localStorage.getItem(CACHE_KEY);
-    return raw ? JSON.parse(raw) : { tareas: [], compra: [] };
-  } catch (e) { return { tareas: [], compra: [] }; }
+    if (raw) d = JSON.parse(raw);
+  } catch (e) {}
+  d.tareas = d.tareas || [];
+  d.compra = d.compra || [];
+  d.casa = d.casa || [];
+  return d;
 }
 
 function saveCache() {
@@ -155,15 +190,38 @@ function setStatus(msg) {
   document.getElementById('status').textContent = msg || "";
 }
 
+function getWeekKey(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const weekNum = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return d.getUTCFullYear() + "-W" + String(weekNum).padStart(2, '0');
+}
+
+function getWeekStart(date) {
+  const d = new Date(date);
+  const dayNum = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dayNum);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 function setTab(t) {
   tab = t;
+  casaView = "semana";
   document.getElementById('tab-tareas').classList.toggle('active', t === 'tareas');
   document.getElementById('tab-compra').classList.toggle('active', t === 'compra');
+  document.getElementById('tab-casa').classList.toggle('active', t === 'casa');
   document.getElementById('new-input').placeholder = t === 'tareas' ? "Nueva tarea" : "Añadir a la compra";
   render();
 }
 
 function render() {
+  const isCasa = tab === 'casa';
+  document.getElementById('add-row').style.display = isCasa ? 'none' : 'flex';
+  if (isCasa) { renderCasa(); return; }
+
   const list = document.getElementById('list');
   list.innerHTML = "";
   const items = data[tab];
@@ -194,7 +252,10 @@ function post(body) {
   });
 }
 
+// ---------- Tareas y Compra ----------
+
 function addItem() {
+  if (tab === 'casa') return;
   const input = document.getElementById('new-input');
   const texto = input.value.trim();
   if (!texto) return;
@@ -213,19 +274,25 @@ function addItem() {
 }
 
 let pendingId = null;
-
 let pendingTexto = "";
+let pendingMode = "item";
+
+function resetModalView() {
+  document.getElementById('confirm-item').style.display = 'block';
+  document.getElementById('edit-input').style.display = 'none';
+  document.getElementById('actions-main').style.display = 'flex';
+  document.getElementById('actions-edit').style.display = 'none';
+}
 
 function askComplete(id, texto) {
+  pendingMode = "item";
   pendingId = id;
   pendingTexto = texto;
   document.getElementById('confirm-title').textContent =
     tab === 'tareas' ? "¿Marcar como hecha?" : "¿Quitar de la compra?";
   document.getElementById('confirm-item').textContent = texto;
-  document.getElementById('confirm-item').style.display = 'block';
-  document.getElementById('edit-input').style.display = 'none';
-  document.getElementById('actions-main').style.display = 'flex';
-  document.getElementById('actions-edit').style.display = 'none';
+  document.getElementById('btn-edit').style.display = '';
+  resetModalView();
   document.getElementById('confirm-modal').classList.add('active');
 }
 
@@ -269,9 +336,12 @@ function cancelComplete() {
 
 function confirmComplete() {
   const id = pendingId;
+  const mode = pendingMode;
+  const texto = pendingTexto;
   document.getElementById('confirm-modal').classList.remove('active');
   pendingId = null;
-  if (id) completeItem(id);
+  if (mode === "casa") undoCasa(texto);
+  else if (id) completeItem(id);
 }
 
 function completeItem(id) {
@@ -291,12 +361,192 @@ function completeItem(id) {
   });
 }
 
+// ---------- Casa ----------
+
+function addSectionTitle(container, text) {
+  const h = document.createElement('div');
+  h.className = 'section-title';
+  h.textContent = text;
+  container.appendChild(h);
+}
+
+let casaView = "semana";
+
+function groupCasaByWeek() {
+  const byWeek = {};
+  data.casa.forEach(function(e) {
+    const k = getWeekKey(new Date(e.creada));
+    if (!byWeek[k]) byWeek[k] = {};
+    if (!byWeek[k][e.texto]) byWeek[k][e.texto] = [];
+    byWeek[k][e.texto].push(e);
+  });
+  return byWeek;
+}
+
+function makeHeaderRow(leftEl, rightEl) {
+  const row = document.createElement('div');
+  row.className = 'section-row';
+  row.appendChild(leftEl);
+  row.appendChild(rightEl);
+  return row;
+}
+
+function renderCasa() {
+  if (casaView === "historial") { renderCasaHistorial(); return; }
+
+  const list = document.getElementById('list');
+  list.innerHTML = "";
+
+  const curKey = getWeekKey(new Date());
+  const byWeek = groupCasaByWeek();
+
+  // Esta semana
+  const cur = byWeek[curKey] || {};
+  const doneCount = CASA_TASKS.filter(function(t) { return cur[t]; }).length;
+
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.style.margin = '0 2px';
+  title.textContent = "Esta semana · " + doneCount + " de " + CASA_TASKS.length;
+  const histBtn = document.createElement('button');
+  histBtn.className = 'link-btn';
+  histBtn.textContent = "Ver historial";
+  histBtn.onclick = function() { casaView = "historial"; render(); };
+  list.appendChild(makeHeaderRow(title, histBtn));
+
+  CASA_TASKS.forEach(function(t) {
+    const entries = cur[t] || [];
+    const done = entries.length > 0;
+    const btn = document.createElement('button');
+    btn.className = "item" + (done ? " casa-done" : "");
+
+    let meta = "";
+    if (done) {
+      const last = entries.slice().sort(function(a, b) { return new Date(b.creada) - new Date(a.creada); })[0];
+      meta = new Date(last.creada).toLocaleDateString('es-ES', { weekday: 'short', day: '2-digit' });
+    }
+    btn.innerHTML = '<span class="txt"></span>' +
+      (done ? '<span class="meta">' + meta + '</span><span class="check">✓</span>' : '');
+    btn.querySelector('.txt').textContent = t;
+    btn.onclick = function() {
+      if (done) askUndoCasa(t);
+      else markCasa(t);
+    };
+    list.appendChild(btn);
+  });
+
+}
+
+function renderCasaHistorial() {
+  const list = document.getElementById('list');
+  list.innerHTML = "";
+  const byWeek = groupCasaByWeek();
+
+  const backBtn = document.createElement('button');
+  backBtn.className = 'link-btn';
+  backBtn.textContent = "‹ Volver";
+  backBtn.onclick = function() { casaView = "semana"; render(); };
+  const title = document.createElement('div');
+  title.className = 'section-title';
+  title.style.margin = '0 2px';
+  title.textContent = "Historial";
+  list.appendChild(makeHeaderRow(backBtn, title));
+
+  if (!data.casa.length) {
+    list.insertAdjacentHTML('beforeend', '<div class="empty-msg">Todavía no hay semanas anteriores.</div>');
+    return;
+  }
+  let earliest = null;
+  data.casa.forEach(function(e) {
+    const d = new Date(e.creada);
+    if (!earliest || d < earliest) earliest = d;
+  });
+
+  const curStart = getWeekStart(new Date());
+  let shown = 0;
+
+  for (let i = 1; i <= 8; i++) {
+    const start = new Date(curStart);
+    start.setDate(start.getDate() - 7 * i);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    if (earliest && end < earliest) break;
+
+    shown++;
+
+    const wk = byWeek[getWeekKey(start)] || {};
+    const count = CASA_TASKS.filter(function(t) { return wk[t]; }).length;
+    const label = start.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) +
+      " - " + end.toLocaleDateString('es-ES', { day: '2-digit', month: 'short' });
+
+    const div = document.createElement('div');
+    div.className = "week-row";
+    div.innerHTML =
+      '<div class="week-label">' + label + '</div>' +
+      '<div class="week-days">' + count + ' de ' + CASA_TASKS.length + ' tareas</div>' +
+      CASA_TASKS.map(function(t) {
+        const es = wk[t];
+        const dia = es ? ' · ' + new Date(es[0].creada).toLocaleDateString('es-ES', { weekday: 'short' }) : '';
+        return '<span class="chip' + (es ? ' done' : '') + '">' + t + dia + '</span>';
+      }).join('');
+    list.appendChild(div);
+  }
+
+  if (!shown) {
+    list.insertAdjacentHTML('beforeend', '<div class="empty-msg">Todavía no hay semanas anteriores.</div>');
+  }
+}
+
+function markCasa(t) {
+  const now = new Date();
+  const id = "c" + Date.now();
+  data.casa.push({ id: id, texto: t, creada: now.toISOString() });
+  saveCache();
+  render();
+
+  post({ accion: "add", hoja: "casa", id: id, texto: t, fecha: now.toISOString() }).catch(function(err) {
+    console.error("Error al guardar:", err);
+    setStatus("No se pudo guardar en Google Sheets");
+  });
+}
+
+function askUndoCasa(t) {
+  pendingMode = "casa";
+  pendingId = "casa";
+  pendingTexto = t;
+  document.getElementById('confirm-title').textContent = "¿Quitar de esta semana?";
+  document.getElementById('confirm-item').textContent = t;
+  document.getElementById('btn-edit').style.display = 'none';
+  resetModalView();
+  document.getElementById('confirm-modal').classList.add('active');
+}
+
+function undoCasa(t) {
+  const curKey = getWeekKey(new Date());
+  const toRemove = data.casa.filter(function(e) {
+    return e.texto === t && getWeekKey(new Date(e.creada)) === curKey;
+  });
+  data.casa = data.casa.filter(function(e) { return toRemove.indexOf(e) === -1; });
+  saveCache();
+  render();
+
+  toRemove.forEach(function(e) {
+    post({ accion: "delete", hoja: "casa", id: e.id }).catch(function(err) {
+      console.error("Error al quitar:", err);
+      setStatus("No se pudo quitar en Google Sheets");
+    });
+  });
+}
+
+// ---------- Carga ----------
+
 function refresh() {
   setStatus("Actualizando...");
   fetch(SHEET_URL, { method: "GET" })
     .then(function(r) { return r.json(); })
     .then(function(json) {
-      data = { tareas: json.tareas || [], compra: json.compra || [] };
+      data = { tareas: json.tareas || [], compra: json.compra || [], casa: json.casa || [] };
       saveCache();
       render();
       setStatus("");
